@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .db import get_db
+from .routers import auth as auth_router
 
 app = FastAPI(title="AI Job Board API")
 
@@ -16,9 +17,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router.router)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "jobboard-api"}
+
 
 @app.get("/health/db")
 def health_db(db: Session = Depends(get_db)):
