@@ -3,8 +3,9 @@ LangGraph node functions.
 
 Step 7: extract_resume, extract_job, judge_match, generate_explanation
 use Gemini via langchain-google-genai with structured output.
-embed_and_index / retrieve_candidates / retrieve_evidence stay stubbed
-until Step 7 Part B.
+
+Step 7b: embed_and_index, retrieve_candidates, retrieve_evidence now use
+Gemini embeddings + pgvector for real semantic retrieval. No stubs remain.
 """
 import hashlib
 import sys
@@ -13,6 +14,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from ..config import settings
+from ..services.vectorstore import (
+    search_chunks,
+    search_resumes,
+    upsert_job_embedding,
+    upsert_resume_embedding,
+)
 from .prompts import (
     EXTRACT_JOB_SYSTEM,
     EXTRACT_RESUME_SYSTEM,
@@ -96,7 +103,18 @@ async def extract_job(state: GraphState) -> dict:
 
 # ---------- 3. embed_and_index ----------
 async def embed_and_index(state: GraphState) -> dict:
-    # STUB — Part B replaces with real embeddings + vector store
+    """
+    Compute and persist embeddings for the resume and/or job.
+    Resumes also get chunk-level embeddings for evidence retrieval.
+    """
+    rid = state.get("resume_id")
+    jid = state.get("job_id")
+
+    if rid and state.get("raw_resume_text"):
+        await upsert_resume_embedding(rid, state["raw_resume_text"])
+    if jid and state.get("raw_job_text"):
+        await upsert_job_embedding(jid, state["raw_job_text"])
+
     return {
         "token_usage": [{"node": "embed_and_index", "input": 0, "output": 0}],
     }
@@ -104,33 +122,75 @@ async def embed_and_index(state: GraphState) -> dict:
 
 # ---------- 4. retrieve_candidates ----------
 async def retrieve_candidates(state: GraphState) -> dict:
-    # STUB — Part B replaces with semantic search
-    rid = state.get("resume_id")
-    if rid:
-        return {
-            "candidate_ids": [rid],
-            "resume_texts": {rid: state.get("raw_resume_text", "")},
-        }
-    return {"candidate_ids": [], "resume_texts": {}}
+    """
+    Semantic search over resume embeddings, filtered by min experience.
+    Uses the job description as the query.
+    """
+    reqs = state["job_requirements"]
+    job_text = state.get("raw_job_text") or ""
+
+    # Hard pre-filter: candidates must have at least (min_years - 1) experience.
+    # The -1 gives a grace window so near-misses aren't silently dropped.
+    min_years = max(reqs.min_years_experience - 1.0, 0.0)
+
+    hits = await search_resumes(
+        query_text=job_text,
+        top_k=10,
+        min_years=min_years if min_years > 0 else None,
+    )
+
+    # Pair mode: if we were given a specific resume_id, keep only that one.
+    # Batch mode: return all semantic hits.
+    target_rid = state.get("resume_id")
+    if target_rid:
+        filtered = [h for h in hits if h["id"] == target_rid]
+        if filtered:
+            hits = filtered
+        else:
+            # The target resume wasn't in the semantic top-k (e.g. its
+            # embedding is missing or it's a poor semantic match). Fall
+            # back to using it directly so pair mode always produces output.
+            hits = [{
+                "id": target_rid,
+                "text": state.get("raw_resume_text", ""),
+                "score": 1.0,
+            }]
+
+    return {
+        "candidate_ids": [h["id"] for h in hits],
+        "resume_texts": {h["id"]: h["text"] for h in hits},
+    }
 
 
 # ---------- 5. retrieve_evidence ----------
 async def retrieve_evidence(state: GraphState) -> dict:
-    # STUB — Part B replaces with per-requirement snippet retrieval
+    """
+    For each (resume, requirement) pair, retrieve the most relevant
+    resume chunks as evidence.
+    """
     reqs = state["job_requirements"]
-    resume_text = state.get("raw_resume_text") or ""
-    rid = state.get("resume_id") or "unknown"
+    evidence: dict[str, list[dict]] = {}
 
-    snippets = []
-    for skill in reqs.must_have_skills + reqs.nice_to_have_skills:
-        present = skill.lower() in resume_text.lower()
-        snippets.append({
-            "requirement": skill,
-            "snippet": f"Experience with {skill}." if present
-                       else "(no matching evidence in stub)",
-            "score": 0.9 if present else 0.2,
-        })
-    return {"evidence": {rid: snippets}}
+    for rid in state.get("candidate_ids", []):
+        snippets: list[dict] = []
+        for skill in reqs.must_have_skills + reqs.nice_to_have_skills:
+            try:
+                chunks = await search_chunks(rid, skill, top_k=2)
+            except Exception as e:
+                print(
+                    f"DEBUG retrieve_evidence failed for {rid}/{skill}: {e}",
+                    file=sys.stderr,
+                )
+                chunks = []
+            for c in chunks:
+                snippets.append({
+                    "requirement": skill,
+                    "snippet": c["text"],
+                    "score": c["score"],
+                })
+        evidence[rid] = snippets
+
+    return {"evidence": evidence}
 
 
 # ---------- 6. judge_match ----------
