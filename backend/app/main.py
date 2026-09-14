@@ -7,6 +7,7 @@ from .config import settings
 from .db import get_db
 from .routers import auth as auth_router
 from .routers import jobs as jobs_router
+from .routers import resumes as resumes_router
 
 app = FastAPI(title="AI Job Board API")
 
@@ -20,6 +21,7 @@ app.add_middleware(
 
 app.include_router(auth_router.router)
 app.include_router(jobs_router.router)
+app.include_router(resumes_router.router)
 
 
 @app.get("/health")

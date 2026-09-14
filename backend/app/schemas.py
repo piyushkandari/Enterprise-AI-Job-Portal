@@ -52,3 +52,24 @@ class JobResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+# ---------- Resumes ----------
+class ResumeResponse(BaseModel):
+    id: str
+    candidate_id: str
+    raw_text: str
+    structured_profile: dict
+    embedding_id: str | None
+    uploaded_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ResumeMeta(BaseModel):
+    """Same as ResumeResponse but without the raw text — for list views."""
+    id: str
+    candidate_id: str
+    structured_profile: dict
+    uploaded_at: datetime
+
+    model_config = {"from_attributes": True}

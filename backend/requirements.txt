@@ -8,3 +8,6 @@ alembic==1.13.3
 bcrypt==4.2.1
 pyjwt==2.10.1
 email-validator==2.2.0
+python-multipart==0.0.12
+pypdf==5.1.0
+python-docx==1.1.2
