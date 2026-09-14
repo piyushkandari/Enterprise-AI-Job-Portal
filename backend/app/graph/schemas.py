@@ -33,3 +33,9 @@ class RequirementVerdict(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     evidence: str = ""
     weight: float = 1.0
+
+
+class VerdictList(BaseModel):
+    """Wrapper so Gemini's structured-output sees an object at the top level
+    (it handles object-shaped schemas far more reliably than bare arrays)."""
+    verdicts: list[RequirementVerdict]
