@@ -53,7 +53,11 @@ LLM = ChatGoogleGenerativeAI(
 
 # ---------- Retry wrapper for 429 quota errors ----------
 def _retry_on_429(max_attempts: int = 4):
-    """Exponential backoff for Gemini free-tier quota (5 RPM) errors."""
+    """Exponential backoff for Gemini rate-limit errors.
+
+    Kept in production: 429s are a fact of life on any LLM API, and the
+    log line here is genuinely useful for post-mortems.
+    """
     def deco(fn):
         @wraps(fn)
         async def wrapper(*args, **kwargs):
@@ -70,7 +74,7 @@ def _retry_on_429(max_attempts: int = 4):
                     )
                     if is_429 and attempt < max_attempts - 1:
                         print(
-                            f"DEBUG 429 on {fn.__name__}, waiting {delay}s "
+                            f"429 on {fn.__name__}, waiting {delay}s "
                             f"(attempt {attempt + 1}/{max_attempts})",
                             file=sys.stderr,
                         )
@@ -104,10 +108,6 @@ async def extract_resume(state: GraphState) -> dict:
             row = db.get(Resume, rid)
             if row and row.structured_profile:
                 cached = CandidateProfile(**row.structured_profile)
-                print(
-                    f"DEBUG extract_resume -> CACHED {cached.full_name}",
-                    file=sys.stderr,
-                )
                 return {"candidate_profile": cached}
         finally:
             db.close()
@@ -131,8 +131,6 @@ async def extract_resume(state: GraphState) -> dict:
         finally:
             db.close()
 
-    print(f"DEBUG extract_resume -> FRESH {profile.full_name}", file=sys.stderr)
-
     return {
         "candidate_profile": profile,
         "token_usage": [{"node": "extract_resume", **_usage(out["raw"])}],
@@ -153,10 +151,6 @@ async def extract_job(state: GraphState) -> dict:
             row = db.get(Job, jid)
             if row and row.structured_requirements:
                 cached = JobRequirements(**row.structured_requirements)
-                print(
-                    f"DEBUG extract_job -> CACHED {cached.title}",
-                    file=sys.stderr,
-                )
                 return {"job_requirements": cached}
         finally:
             db.close()
@@ -178,8 +172,6 @@ async def extract_job(state: GraphState) -> dict:
                 db.commit()
         finally:
             db.close()
-
-    print(f"DEBUG extract_job -> FRESH {reqs.title}", file=sys.stderr)
 
     return {
         "job_requirements": reqs,
@@ -262,8 +254,9 @@ async def retrieve_evidence(state: GraphState) -> dict:
             try:
                 chunks = await search_chunks(rid, skill, top_k=2)
             except Exception as e:
+                # Log real retrieval failures but don't crash the whole match.
                 print(
-                    f"DEBUG retrieve_evidence failed for {rid}/{skill}: {e}",
+                    f"retrieve_evidence failed for {rid}/{skill}: {e}",
                     file=sys.stderr,
                 )
                 chunks = []
@@ -287,7 +280,6 @@ async def judge_match(state: GraphState) -> dict:
 
     req_list = [*reqs.must_have_skills, *reqs.nice_to_have_skills]
     if not req_list:
-        print("DEBUG judge_match -> no requirements to judge", file=sys.stderr)
         return {"verdicts": []}
 
     evidence_block = "\n".join(
@@ -306,9 +298,6 @@ async def judge_match(state: GraphState) -> dict:
         "reqs": "\n".join(f"- {r}" for r in req_list),
         "ev": evidence_block,
     })
-
-    # DEBUG — remove after confirming verdicts are being produced
-    print(f"DEBUG judge_match -> {out['parsed']!r}", file=sys.stderr)
 
     verdicts: list[RequirementVerdict] = out["parsed"].verdicts
 
