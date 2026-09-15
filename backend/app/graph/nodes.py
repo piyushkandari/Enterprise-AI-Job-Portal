@@ -6,14 +6,21 @@ use Gemini via langchain-google-genai with structured output.
 
 Step 7b: embed_and_index, retrieve_candidates, retrieve_evidence now use
 Gemini embeddings + pgvector for real semantic retrieval. No stubs remain.
+
+Step 7c: extract_resume and extract_job cache their results in Postgres
+to avoid re-running extraction on repeat matches. judge_match and
+generate_explanation retry automatically on 429 quota errors.
 """
-import hashlib
+import asyncio
 import sys
+from functools import wraps
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from ..config import settings
+from ..db import SessionLocal
+from ..models import Job, Resume
 from ..services.vectorstore import (
     search_chunks,
     search_resumes,
@@ -38,10 +45,41 @@ from .state import GraphState
 # ---------- LLM ----------
 # Initialized once at import time. Every LLM node reuses this object.
 LLM = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
+    model="gemini-3.5-flash-lite",
     temperature=0,
-    api_key=settings.google_api_key,   # if TypeError, change to: google_api_key=
+    api_key=settings.google_api_key,
 )
+
+
+# ---------- Retry wrapper for 429 quota errors ----------
+def _retry_on_429(max_attempts: int = 4):
+    """Exponential backoff for Gemini free-tier quota (5 RPM) errors."""
+    def deco(fn):
+        @wraps(fn)
+        async def wrapper(*args, **kwargs):
+            delay = 15
+            for attempt in range(max_attempts):
+                try:
+                    return await fn(*args, **kwargs)
+                except Exception as e:
+                    msg = str(e)
+                    is_429 = (
+                        "429" in msg
+                        or "ResourceExhausted" in msg
+                        or "quota" in msg.lower()
+                    )
+                    if is_429 and attempt < max_attempts - 1:
+                        print(
+                            f"DEBUG 429 on {fn.__name__}, waiting {delay}s "
+                            f"(attempt {attempt + 1}/{max_attempts})",
+                            file=sys.stderr,
+                        )
+                        await asyncio.sleep(delay)
+                        delay = min(delay * 2, 60)
+                    else:
+                        raise
+        return wrapper
+    return deco
 
 
 def _usage(raw) -> dict:
@@ -52,51 +90,99 @@ def _usage(raw) -> dict:
     }
 
 
-def _stable_confidence(text: str) -> float:
-    h = int(hashlib.sha1(text.encode()).hexdigest()[:8], 16)
-    return 0.7 + (h % 30) / 100.0
-
-
 # ---------- 1. extract_resume ----------
 async def extract_resume(state: GraphState) -> dict:
-    text = state.get("raw_resume_text") or ""
-    if not text:
+    text_input = state.get("raw_resume_text") or ""
+    if not text_input:
         return {}
+
+    # Cache check: if we already extracted this resume, reuse it — no LLM call.
+    rid = state.get("resume_id")
+    if rid:
+        db = SessionLocal()
+        try:
+            row = db.get(Resume, rid)
+            if row and row.structured_profile:
+                cached = CandidateProfile(**row.structured_profile)
+                print(
+                    f"DEBUG extract_resume -> CACHED {cached.full_name}",
+                    file=sys.stderr,
+                )
+                return {"candidate_profile": cached}
+        finally:
+            db.close()
 
     chain = ChatPromptTemplate.from_messages([
         ("system", EXTRACT_RESUME_SYSTEM),
         ("human", "Resume text:\n\n{resume}"),
     ]) | LLM.with_structured_output(CandidateProfile, include_raw=True)
 
-    out = await chain.ainvoke({"resume": text})
+    out = await chain.ainvoke({"resume": text_input})
+    profile = out["parsed"]
 
-    # DEBUG — remove after confirming extraction is clean
-    print(f"DEBUG extract_resume -> {out['parsed']!r}", file=sys.stderr)
+    # Persist for future cache hits
+    if rid and profile:
+        db = SessionLocal()
+        try:
+            row = db.get(Resume, rid)
+            if row:
+                row.structured_profile = profile.model_dump()
+                db.commit()
+        finally:
+            db.close()
+
+    print(f"DEBUG extract_resume -> FRESH {profile.full_name}", file=sys.stderr)
 
     return {
-        "candidate_profile": out["parsed"],
+        "candidate_profile": profile,
         "token_usage": [{"node": "extract_resume", **_usage(out["raw"])}],
     }
 
 
 # ---------- 2. extract_job ----------
 async def extract_job(state: GraphState) -> dict:
-    text = state.get("raw_job_text") or ""
-    if not text:
+    text_input = state.get("raw_job_text") or ""
+    if not text_input:
         return {}
+
+    # Cache check: if we already extracted this job, reuse it — no LLM call.
+    jid = state.get("job_id")
+    if jid:
+        db = SessionLocal()
+        try:
+            row = db.get(Job, jid)
+            if row and row.structured_requirements:
+                cached = JobRequirements(**row.structured_requirements)
+                print(
+                    f"DEBUG extract_job -> CACHED {cached.title}",
+                    file=sys.stderr,
+                )
+                return {"job_requirements": cached}
+        finally:
+            db.close()
 
     chain = ChatPromptTemplate.from_messages([
         ("system", EXTRACT_JOB_SYSTEM),
         ("human", "Job description:\n\n{job}"),
     ]) | LLM.with_structured_output(JobRequirements, include_raw=True)
 
-    out = await chain.ainvoke({"job": text})
+    out = await chain.ainvoke({"job": text_input})
+    reqs = out["parsed"]
 
-    # DEBUG — remove after confirming extraction is clean
-    print(f"DEBUG extract_job -> {out['parsed']!r}", file=sys.stderr)
+    if jid and reqs:
+        db = SessionLocal()
+        try:
+            row = db.get(Job, jid)
+            if row:
+                row.structured_requirements = reqs.model_dump()
+                db.commit()
+        finally:
+            db.close()
+
+    print(f"DEBUG extract_job -> FRESH {reqs.title}", file=sys.stderr)
 
     return {
-        "job_requirements": out["parsed"],
+        "job_requirements": reqs,
         "token_usage": [{"node": "extract_job", **_usage(out["raw"])}],
     }
 
@@ -147,9 +233,8 @@ async def retrieve_candidates(state: GraphState) -> dict:
         if filtered:
             hits = filtered
         else:
-            # The target resume wasn't in the semantic top-k (e.g. its
-            # embedding is missing or it's a poor semantic match). Fall
-            # back to using it directly so pair mode always produces output.
+            # The target resume wasn't in the semantic top-k. Fall back to
+            # using it directly so pair mode always produces output.
             hits = [{
                 "id": target_rid,
                 "text": state.get("raw_resume_text", ""),
@@ -194,6 +279,7 @@ async def retrieve_evidence(state: GraphState) -> dict:
 
 
 # ---------- 6. judge_match ----------
+@_retry_on_429()
 async def judge_match(state: GraphState) -> dict:
     reqs = state["job_requirements"]
     rid = state.get("resume_id") or next(iter(state["evidence"]))
@@ -249,6 +335,7 @@ async def aggregate_score(state: GraphState) -> dict:
 
 
 # ---------- 8. generate_explanation ----------
+@_retry_on_429()
 async def generate_explanation(state: GraphState) -> dict:
     verdicts = state.get("verdicts") or []
     met = [v.requirement for v in verdicts if v.status == "met"]

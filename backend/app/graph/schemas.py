@@ -39,3 +39,4 @@ class VerdictList(BaseModel):
     """Wrapper so Gemini's structured-output sees an object at the top level
     (it handles object-shaped schemas far more reliably than bare arrays)."""
     verdicts: list[RequirementVerdict]
+

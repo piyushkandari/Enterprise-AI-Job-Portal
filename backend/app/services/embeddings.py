@@ -51,9 +51,12 @@ async def embed_query(text: str) -> list[float]:
     raw = await get_embedder().aembed_query(text)
     return _truncate_and_normalize(raw)
 
-
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
-    """Word-based chunker with overlap — sized for resume paragraphs."""
+def chunk_text(text: str, chunk_size: int = 120, overlap: int = 30) -> list[str]:
+    """
+    Word-based chunker with overlap — sized for resume sections.
+    ~120 words per chunk captures a single role / skill cluster;
+    30-word overlap ensures skills near boundaries appear in one full chunk.
+    """
     words = text.split()
     if not words:
         return []

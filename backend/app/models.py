@@ -48,3 +48,16 @@ class Match(Base):
     verdicts: Mapped[list] = mapped_column(JSON, default=list)
     explanation: Mapped[str] = mapped_column(Text, default="")
     computed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+class JobInterest(Base):
+    __tablename__ = "job_interests"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )

@@ -27,6 +27,9 @@ Rules:
 - If evidence hints at the skill but is vague or adjacent → "partial"
 - If evidence does not show the skill → "missing"
 - Quote the exact snippet that supports your verdict in the `evidence` field.
+- For "missing" verdicts, leave `evidence` EMPTY. Do not quote a snippet
+  that doesn't support the requirement — an empty field is more honest
+  than an unrelated quote.
 - Never infer skills not present in the evidence.
 - Set confidence based on how directly the evidence supports the verdict.
 

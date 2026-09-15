@@ -73,3 +73,18 @@ class ResumeMeta(BaseModel):
     uploaded_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ---------- Interests ----------
+class InterestResponse(BaseModel):
+    job_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class InterestedCandidate(BaseModel):
+    candidate_id: str
+    email: EmailStr
+    full_name: str
+    created_at: datetime

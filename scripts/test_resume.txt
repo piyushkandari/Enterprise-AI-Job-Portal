@@ -1,0 +1,46 @@
+PRIYA SHARMA
+priya.sharma@example.com | +91 98765 43210 | Bangalore, India | github.com/priyasharma
+
+SUMMARY
+Senior Machine Learning Engineer with 6 years of experience building and shipping
+production ML systems. Deep expertise in deep learning, LLM applications, and MLOps.
+Track record of taking models from research to production at scale.
+
+SKILLS
+Languages & Frameworks: Python, PyTorch, TensorFlow, Keras, scikit-learn, FastAPI
+LLM & GenAI: OpenAI API, Anthropic Claude API, LangChain, LangGraph, RAG pipelines,
+  prompt engineering, fine-tuning (LoRA, QLoRA)
+Vector Databases: pgvector, Pinecone, Weaviate
+MLOps: MLflow, Weights & Biases, Docker, Kubernetes, Airflow, DVC
+Cloud: AWS (SageMaker, Lambda, ECS), GCP (Vertex AI)
+
+EXPERIENCE
+
+Lead ML Engineer — Fintrail Technologies, Bangalore (2022 – Present)
+- Built a production RAG system serving 50k queries/day using LangChain and pgvector,
+  reducing customer support resolution time by 35%.
+- Fine-tuned Llama-2-7B with LoRA on domain data, achieving 92% accuracy on internal
+  benchmark vs. 78% for the base model.
+- Shipped three recommendation models to production using PyTorch, MLflow for tracking,
+  and Kubernetes for serving.
+- Integrated OpenAI and Anthropic Claude APIs for document summarization; handled
+  prompt injection defenses and token cost optimization.
+- Mentored 4 junior engineers on MLOps best practices.
+
+ML Engineer — Datacraft AI, Pune (2019 – 2022)
+- Developed deep learning models for document classification using TensorFlow,
+  deployed on AWS SageMaker.
+- Built feature pipelines in Airflow processing 10M+ records daily.
+- Owned the transition from Jupyter notebooks to reproducible training pipelines
+  with DVC and MLflow.
+
+Software Engineer — Infosys, Pune (2018 – 2019)
+- Python backend development for internal data tooling.
+
+EDUCATION
+M.Tech in Computer Science (Machine Learning specialization), IIT Bombay, 2018
+B.Tech in Computer Engineering, Pune University, 2016
+
+PUBLICATIONS
+Sharma, P. et al. "Efficient Fine-Tuning of LLMs for Domain-Specific Question
+Answering." ACL Workshop on Industry Track, 2023.
