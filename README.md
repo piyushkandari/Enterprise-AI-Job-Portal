@@ -479,3 +479,21 @@ MIT. See `LICENSE` for details.
 ## Acknowledgments
 
 Built as a demonstration of production-shaped LLM application engineering — LangGraph orchestration, grounded reasoning, deterministic scoring, and an auditable pipeline. The design tradeoffs (graph over single-prompt, deterministic scoring over LLM-scored, pgvector over a dedicated vector DB) are intentional and documented above.
+
+## Screenshots
+
+### Candidate — Ranked job shortlist
+<img width="1003" height="600" alt="image" src="https://github.com/user-attachments/assets/fcfb58c0-6f2c-49bc-90ed-27af1540d929" />
+
+
+### Match detail — evidence-grounded breakdown
+<img width="1003" height="600" alt="Screenshot_20260916_192432" src="https://github.com/user-attachments/assets/31208c9b-5113-44a3-bee6-af799711fd48" />
+
+
+### Employer — ranked candidates per job
+<img width="1003" height="600" alt="Screenshot_20260916_192404" src="https://github.com/user-attachments/assets/16bf6292-3451-4375-a72d-e99c5308f7de" />
+
+<img width="1003" height="600" alt="Screenshot_20260916_192420" src="https://github.com/user-attachments/assets/e961171a-9fcd-4e1f-85f6-b761d655f731" />
+
+
+
